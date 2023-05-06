@@ -182,7 +182,7 @@ class SharedObject:
     
     @apply_changes_dec
     def __eq__(self, other):
-        return self.data == other
+        return self.copy() == other
     
     def __hash__(self):
         return hash(self.data)
