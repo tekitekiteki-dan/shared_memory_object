@@ -1,13 +1,11 @@
-name: CI
+name: CI pull_request
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
-  build:
+  test:
 
     runs-on: ubuntu-latest
 
@@ -24,3 +22,7 @@ jobs:
     - name: Test with pytest
       run: |
         make do_pytest
+    - name: Merge branch
+      if: ${{ success() }}
+      run: |
+        git merge --no-ff ${{ github.event.pull_request.head.ref }}
