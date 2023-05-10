@@ -8,9 +8,9 @@ data_types = (set, list, dict, deque, defaultdict, OrderedDict)
 
 def apply_changes_dec(func):
     
-    def wrapper(self, *args):
+    def wrapper(self, *args, **kwargs):
         self.apply_changes()
-        res = func(self, *args)
+        res = func(self, *args, **kwargs)
         return res
     wrapper.__name__ = func.__name__
     
@@ -19,9 +19,9 @@ def apply_changes_dec(func):
 
 def write_changes_dec(func):
     
-    def wrapper(self, *args):
+    def wrapper(self, *args, **kwargs):
         
-        if self._is_nested and type(self.data) != set:
+        if self._is_nested:
             varnames = func.__code__.co_varnames
             
             if 'item' in varnames:
@@ -40,11 +40,11 @@ def write_changes_dec(func):
                     args = list(args)
                     args[item_index] = item
         
-        res = func(self, *args)
-        self._write_changes(func.__name__, *args)
+        res = func(self, *args, **kwargs)
+        self._write_changes(func.__name__, *args, **kwargs)
         return res
     wrapper.__name__ = func.__name__
-    
+
     return wrapper
 
 
@@ -201,14 +201,14 @@ class SharedObject:
     
     @apply_changes_dec
     def copy(self):
-        if len(self.data) > 0 and self.is_nested:
+        if len(self.data) > 0 and self._is_nested:
             if isinstance(self.data, (list, deque)):
                 tmp = [item.copy() if type(item) == SharedObject else item \
                              for item in self.data]
             else:
                 tmp = {key: item.copy() if type(item) == SharedObject else item \
                              for key, item in self.data.items()}
-            return self.obj_type(tmp)
+            return self._obj_type(tmp)
         else:
             return self.data.copy()
     
@@ -245,6 +245,11 @@ class SharedObject:
     def reverse(self):
         self.data.reverse()
     
+    @apply_changes_dec
+    @write_changes_dec
+    def sort(self, key=None, reverse=False):
+        self.data.sort(key=key, reverse=reverse)
+
     # DEQUE METHODS #
     
     @apply_changes_dec
@@ -268,13 +273,6 @@ class SharedObject:
         self.data.rotate(n)
     
     # DICT / DEFAULTDICT / ORDEREDDICT METHODS #
-    
-    @apply_changes_dec
-    @write_changes_dec
-    def fromkeys(self, other, item=None):
-        self.clear()
-        for key in other:
-            self[key] = item
     
     @apply_changes_dec
     def get(self, key, default=None):
@@ -387,8 +385,8 @@ class SharedObject:
             while pos < int.from_bytes(self._update_stream_position_remote, 'little'):
                 length = int.from_bytes(bytes(self._buffer.buf[pos:pos+4]), 'little')
                 pos += 4
-                func_name, args = self._serializer.loads(bytes(self._buffer.buf[pos:pos+length]))
-                self.data.__getattribute__(func_name)(*args)
+                func_name, args, kwargs = self._serializer.loads(bytes(self._buffer.buf[pos:pos+length]))
+                self.data.__getattribute__(func_name)(*args, **kwargs)
                 pos += length
                 self._update_stream_position = pos
     
@@ -410,10 +408,10 @@ class SharedObject:
         else:
             raise Exception("Cannot load full dump, no new data available")
     
-    def _write_changes(self, func_name, *args):
+    def _write_changes(self, func_name, *args, **kwargs):
         """Write applied changes to data to shared memory."""
         
-        marshalled = self._serializer.dumps((func_name, args))
+        marshalled = self._serializer.dumps((func_name, args, kwargs))
         length = len(marshalled)
 
         start_position = int.from_bytes(self._update_stream_position_remote, 'little')
